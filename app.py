@@ -203,6 +203,12 @@ with st.sidebar:
         help="Powers semantic embeddings and grounded answer generation. Leave blank for lexical-only search."
     )
     top_k = st.slider("Evidence passages", 2, 10, 5)
+
+key_fingerprint = hashlib.sha256(api_key.encode()).hexdigest() if api_key else None
+if st.session_state.api_key_fingerprint != key_fingerprint:
+    st.session_state.semantic_vectors = None
+    st.session_state.semantic_fingerprint = None
+    st.session_state.api_key_fingerprint = key_fingerprint
     st.divider()
     st.caption("Supported formats: PDF, DOCX, TXT, Markdown")
     st.caption("Embedding model: text-embedding-3-small")
@@ -214,7 +220,7 @@ uploads = st.file_uploader("Upload project documents", type=["pdf", "docx", "txt
 for key, default in {
     "chunks": [], "fingerprint": None, "semantic_vectors": None,
     "semantic_fingerprint": None, "last_hits": [], "answer": "",
-    "search_method": "", "inspection": [],
+    "search_method": "", "inspection": [], "api_key_fingerprint": None,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
