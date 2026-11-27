@@ -180,15 +180,34 @@ def generate_answer(question, hits, api_key):
 
 
 def render_hits(hits, show_details=True):
-    for rank, (chunk, score, details) in enumerate(hits, 1):
+    """Render current results and legacy two-field results retained in Streamlit sessions."""
+    for rank, item in enumerate(hits, 1):
+        if len(item) == 3:
+            chunk, score, details = item
+        elif len(item) == 2:
+            # Older app versions stored (chunk, score); Streamlit may retain this
+            # session state after a code redeployment.
+            chunk, score = item
+            details = {
+                "lexical_rank": rank,
+                "semantic_rank": None,
+                "semantic_similarity": None,
+            }
+        else:
+            st.warning("Skipped an evidence result with an unexpected format.")
+            continue
+
         with st.expander(f"#{rank} · {chunk.source} · rank score {score:.4f}"):
             st.write(chunk.text)
             if show_details:
                 cols = st.columns(3)
-                cols[0].metric("Lexical rank", details["lexical_rank"] or "—")
-                cols[1].metric("Semantic rank", details["semantic_rank"] or "—")
-                semantic_score = details["semantic_similarity"]
-                cols[2].metric("Semantic similarity", f"{semantic_score:.3f}" if semantic_score is not None else "—")
+                cols[0].metric("Lexical rank", details.get("lexical_rank") or "—")
+                cols[1].metric("Semantic rank", details.get("semantic_rank") or "—")
+                semantic_score = details.get("semantic_similarity")
+                cols[2].metric(
+                    "Semantic similarity",
+                    f"{semantic_score:.3f}" if semantic_score is not None else "—",
+                )
 
 
 st.title("WorkplaceIQ")
