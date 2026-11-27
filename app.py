@@ -197,162 +197,24 @@ st.write("Upload workplace documents, ask questions across them, and trace answe
 
 with st.sidebar:
     st.header("Workspace settings")
-    try:\n        secret_key = st.secrets.get("OPENAI_API_KEY", "")\n    except Exception:\n        secret_key = ""
+    try:
+        secret_key = st.secrets.get("OPENAI_API_KEY", "")
+    except Exception:
+        secret_key = ""
     api_key = st.text_input(
         "OpenAI API key", value=secret_key, type="password",
         help="Powers semantic embeddings and grounded answer generation. Leave blank for lexical-only search."
     )
     top_k = st.slider("Evidence passages", 2, 10, 5)
-
-key_fingerprint = hashlib.sha256(api_key.encode()).hexdigest() if api_key else None
-if st.session_state.get("api_key_fingerprint") != key_fingerprint:
-    st.session_state.semantic_vectors = None
-    st.session_state.semantic_fingerprint = None
-    st.session_state.api_key_fingerprint = key_fingerprint
     st.divider()
     st.caption("Supported formats: PDF, DOCX, TXT, Markdown")
     st.caption("Embedding model: text-embedding-3-small")
     st.caption("Answer model: gpt-4o-mini")
     st.caption("Search scores are ranking signals, not calibrated confidence probabilities.")
 
-uploads = st.file_uploader("Upload project documents", type=["pdf", "docx", "txt", "md"], accept_multiple_files=True)
-
-for key, default in {
-    "chunks": [], "fingerprint": None, "semantic_vectors": None,
-    "semantic_fingerprint": None, "last_hits": [], "answer": "",
-    "search_method": "", "inspection": [], "api_key_fingerprint": None,
-}.items():
-    if key not in st.session_state:
-        st.session_state[key] = default
-
-if uploads:
-    digest = hashlib.sha256()
-    for file in uploads:
-        digest.update(file.name.encode())
-        digest.update(file.getvalue())
-    fingerprint = digest.hexdigest()
-    if fingerprint != st.session_state.fingerprint:
-        with st.spinner("Extracting and indexing documents..."):
-            try:
-                st.session_state.chunks = index_files(uploads)
-                st.session_state.fingerprint = fingerprint
-                st.session_state.semantic_vectors = None
-                st.session_state.semantic_fingerprint = None
-                st.session_state.last_hits = []
-                st.session_state.answer = ""
-            except Exception as exc:
-                st.error(f"Document processing failed: {exc}")
-    names = sorted({chunk.filename for chunk in st.session_state.chunks})
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Documents", len(names))
-    col2.metric("Evidence chunks", len(st.session_state.chunks))
-    col3.metric("File formats", len({name.rsplit(".", 1)[-1].lower() for name in names}))
-    st.caption("Indexed: " + " · ".join(names))
-else:
-    st.info("Upload one or more documents to begin.")
-    st.session_state.chunks = []
-    st.session_state.fingerprint = None
+key_fingerprint = hashlib.sha256(api_key.encode()).hexdigest() if api_key else None
+if st.session_state.get("api_key_fingerprint") != key_fingerprint:
     st.session_state.semantic_vectors = None
     st.session_state.semantic_fingerprint = None
+    st.session_state.api_key_fingerprint = key_fingerprint
 
-ask_tab, inspect_tab, architecture_tab = st.tabs(
-    ["Ask your workspace", "Retrieval inspector", "Architecture"]
-)
-
-with ask_tab:
-    st.subheader("Ask across your documents")
-    question = st.text_area(
-        "Your question",
-        placeholder="What risks, blockers, deadlines, or unresolved decisions are mentioned?",
-        height=90,
-    )
-    if st.button("Search and answer", type="primary",
-                 disabled=not st.session_state.chunks or not question.strip()):
-        semantic_vectors = None
-        if api_key:
-            try:
-                if st.session_state.semantic_vectors is None:
-                    with st.spinner("Creating semantic embeddings for your documents..."):
-                        st.session_state.semantic_vectors = build_semantic_index(
-                            st.session_state.chunks, api_key
-                        )
-                        st.session_state.semantic_fingerprint = st.session_state.fingerprint
-                semantic_vectors = st.session_state.semantic_vectors
-            except Exception as exc:
-                st.warning(
-                    f"Semantic indexing was unavailable ({type(exc).__name__}). "
-                    "Continuing with lexical retrieval."
-                )
-        hits, method = retrieve(
-            question, st.session_state.chunks, top_k, api_key, semantic_vectors
-        )
-        st.session_state.last_hits = hits
-        st.session_state.search_method = method
-        st.session_state.answer = generate_answer(question, hits, api_key)
-
-    if st.session_state.answer:
-        st.caption("Retrieval mode: " + st.session_state.search_method)
-        st.markdown("#### Answer")
-        st.markdown(st.session_state.answer)
-        st.markdown("#### Evidence used")
-        render_hits(st.session_state.last_hits)
-
-with inspect_tab:
-    st.subheader("Inspect and compare retrieval")
-    query = st.text_input("Test a retrieval query", placeholder="e.g. outstanding invoice amount")
-    if st.button("Inspect passages", disabled=not st.session_state.chunks or not query.strip()):
-        semantic_vectors = st.session_state.semantic_vectors
-        if api_key and semantic_vectors is None:
-            try:
-                with st.spinner("Creating semantic embeddings..."):
-                    semantic_vectors = build_semantic_index(st.session_state.chunks, api_key)
-                    st.session_state.semantic_vectors = semantic_vectors
-                    st.session_state.semantic_fingerprint = st.session_state.fingerprint
-            except Exception as exc:
-                st.warning(f"Semantic indexing unavailable ({type(exc).__name__}); using lexical search.")
-        hits, method = retrieve(query, st.session_state.chunks, top_k, api_key, semantic_vectors)
-        st.session_state.inspection = hits
-        st.session_state.inspection_method = method
-    if st.session_state.inspection:
-        st.caption("Retrieval mode: " + st.session_state.get("inspection_method", ""))
-        render_hits(st.session_state.inspection)
-
-with architecture_tab:
-    st.subheader("System architecture")
-    st.code(
-        "PDF / DOCX / TXT / Markdown\n"
-        "        ↓\n"
-        "Text extraction + page metadata\n"
-        "        ↓\n"
-        "Overlapping chunks + source identifiers\n"
-        "        ↓\n"
-        " ┌──────────────────┬─────────────────────┐\n"
-        " │ Word/char TF-IDF │ OpenAI text          │\n"
-        " │ lexical search   │ embeddings           │\n"
-        " └──────────────────┴─────────────────────┘\n"
-        "        ↓\n"
-        "Reciprocal Rank Fusion (rank-based hybrid)\n"
-        "        ↓\n"
-        "Top evidence passages\n"
-        "        ↓\n"
-        "GPT-4o-mini grounded answer + source citations\n"
-        "        ↓\n"
-        "Evidence inspector",
-        language="text",
-    )
-    st.markdown("""
-**Engineering decisions**
-- Hybrid retrieval combines exact-term matching with semantic similarity.
-- Reciprocal Rank Fusion combines rankings rather than adding incomparable raw scores.
-- Document embeddings are generated once per uploaded document set per session and reused for subsequent queries.
-- The answer model receives only retrieved passages and is instructed to cite source-level evidence.
-- If semantic indexing or generation fails, the app degrades to lexical retrieval or evidence display.
-
-**Current prototype boundaries**
-- Session-scoped, in-memory document and embedding storage
-- No authentication, multi-tenant isolation, or document-level authorization
-- No OCR for scanned PDFs
-- No persistent vector database or background ingestion workers
-- No calibrated confidence or production retrieval benchmark yet
-""")
-    st.caption("Independent portfolio project. Not affiliated with or endorsed by American Express.")
