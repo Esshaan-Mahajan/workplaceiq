@@ -205,7 +205,7 @@ with st.sidebar:
     top_k = st.slider("Evidence passages", 2, 10, 5)
 
 key_fingerprint = hashlib.sha256(api_key.encode()).hexdigest() if api_key else None
-if st.session_state.api_key_fingerprint != key_fingerprint:
+if st.session_state.get("api_key_fingerprint") != key_fingerprint:
     st.session_state.semantic_vectors = None
     st.session_state.semantic_fingerprint = None
     st.session_state.api_key_fingerprint = key_fingerprint
