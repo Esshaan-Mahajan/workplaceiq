@@ -197,7 +197,7 @@ st.write("Upload workplace documents, ask questions across them, and trace answe
 
 with st.sidebar:
     st.header("Workspace settings")
-    secret_key = st.secrets.get("OPENAI_API_KEY", "") if hasattr(st, "secrets") else ""
+    try:\n        secret_key = st.secrets.get("OPENAI_API_KEY", "")\n    except Exception:\n        secret_key = ""
     api_key = st.text_input(
         "OpenAI API key", value=secret_key, type="password",
         help="Powers semantic embeddings and grounded answer generation. Leave blank for lexical-only search."
